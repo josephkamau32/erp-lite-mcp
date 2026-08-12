@@ -58,17 +58,22 @@ To test with Claude Desktop, configure your `claude_desktop_config.json` to use 
 {
   "mcpServers": {
     "erp-lite": {
-      "command": "uv",
+      "command": "C:\\Absolute\\Path\\To\\erp-lite-mcp\\.venv\\Scripts\\python.exe",
       "args": [
-        "run",
-        "python",
         "-m",
         "src.server"
-      ]
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONPATH": "C:\\Absolute\\Path\\To\\erp-lite-mcp"
+      }
     }
   }
 }
 ```
+
+> **Note for Windows Users:** Claude Desktop runs in a sandboxed environment on Windows. Using `uv run` directly inside the config often fails to resolve relative module paths correctly. It is highly recommended to provide the absolute path to the `.venv\Scripts\python.exe` and explicitly pass your project directory as the `PYTHONPATH` environment variable as shown above.
 
 ## Running Unit Tests
 
