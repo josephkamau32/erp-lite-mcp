@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_password
+      POSTGRES_DB: erp_lite
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./seed_data.sql:/docker-entrypoint-initdb.d/seed_data.sql
+
+  mcp_server:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_lite
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
