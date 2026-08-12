@@ -27,20 +27,22 @@ def get_low_stock_items() -> List[InventoryCheckResponse]:
     return list_low_stock_items()
 
 @mcp.tool()
-def create_requisition(material_id: str, quantity: int, requested_by: str) -> PurchaseRequisitionResponse:
+def create_requisition(material_id: str, quantity: int, requested_by: str) -> str:
     """
     Create a new purchase requisition (pending approval).
     The agent CANNOT approve its own requisition.
     """
-    return create_purchase_requisition(material_id, quantity, requested_by)
+    req = create_purchase_requisition(material_id, quantity, requested_by)
+    return f"Successfully created requisition {req.requisition_id} for {quantity} units of {material_id}. Status: {req.status}."
 
 @mcp.tool()
-def approve_pending_requisition(requisition_id: str, approved_by: str) -> PurchaseRequisitionResponse:
+def approve_pending_requisition(requisition_id: str, approved_by: str) -> str:
     """
     Approve a pending purchase requisition. 
     This MUST be triggered by a human.
     """
-    return approve_requisition(requisition_id, approved_by)
+    req = approve_requisition(requisition_id, approved_by)
+    return f"Successfully approved requisition {req.requisition_id}. Status is now {req.status}."
 
 # When run directly, we use stdio by default or check arguments for SSE setup
 if __name__ == "__main__":
