@@ -1,5 +1,5 @@
 import os
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 from typing import List, Optional
 
 # Import tools

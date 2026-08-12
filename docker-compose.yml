@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: erp_password
       POSTGRES_DB: erp_lite
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./seed_data.sql:/docker-entrypoint-initdb.d/seed_data.sql
