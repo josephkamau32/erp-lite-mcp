@@ -31,3 +31,13 @@ class PurchaseRequisitionResponse(BaseModel):
     status: str
     created_at: datetime
     approved_at: Optional[datetime] = None
+
+class AuditLogEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    tool_name: str
+    arguments: str
+    result: str
+    timestamp: datetime
+

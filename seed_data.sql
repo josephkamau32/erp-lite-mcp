@@ -47,3 +47,12 @@ INSERT INTO purchase_requisitions (requisition_id, material_id, quantity, reques
 ('PR-2001', 'MAT-002', 200, 'Alice Smith', 'approved', '2026-08-05 10:00:00', '2026-08-06 14:30:00'),
 ('PR-2002', 'MAT-004', 150, 'Bob Jones', 'pending_approval', '2026-08-11 09:15:00', NULL),
 ('PR-2003', 'MAT-005', 100, 'Charlie Brown', 'pending_approval', '2026-08-12 08:00:00', NULL);
+
+-- Audit log (append-only, no seed data — populated at runtime)
+CREATE TABLE audit_log (
+    id SERIAL PRIMARY KEY,
+    tool_name VARCHAR(100) NOT NULL,
+    arguments VARCHAR(2000) NOT NULL,
+    result VARCHAR(2000) NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

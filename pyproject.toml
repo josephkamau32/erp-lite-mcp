@@ -17,3 +17,6 @@ dependencies = [
     "sse-starlette>=3.4.8",
     "uvicorn>=0.52.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

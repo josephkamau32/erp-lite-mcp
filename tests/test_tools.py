@@ -1,11 +1,13 @@
 import pytest
+import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.db import SessionLocal, get_db
-from src.models import Base, SalesOrder, InventoryItem, PurchaseRequisition
+from src.models import Base, SalesOrder, InventoryItem, PurchaseRequisition, AuditLog
 import src.tools.orders as orders
 import src.tools.inventory as inventory
 import src.tools.requisitions as requisitions
+import src.server as server
 
 # Setup in-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -21,6 +23,7 @@ def setup_db(monkeypatch):
     monkeypatch.setattr("src.tools.orders.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("src.tools.inventory.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("src.tools.requisitions.SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr("src.server.SessionLocal", TestingSessionLocal)
     
     db = TestingSessionLocal()
     
@@ -147,3 +150,96 @@ def test_create_requisition_invalid_quantity():
 def test_approve_nonexistent_requisition():
     with pytest.raises(ValueError, match="Requisition PR-NONEXISTENT not found"):
         requisitions.approve_requisition("PR-NONEXISTENT", "Test Manager", "token")
+
+
+# ---------------------------------------------------------------------------
+# Audit log tests
+# ---------------------------------------------------------------------------
+
+def test_audit_log_records_tool_call():
+    """Calling a tool via the server wrapper should create an audit log entry."""
+    server.get_open_orders(status="open")
+
+    db = TestingSessionLocal()
+    entries = db.query(AuditLog).filter(AuditLog.tool_name == "get_open_orders").all()
+    db.close()
+
+    assert len(entries) >= 1
+    latest = entries[-1]
+    assert "open" in latest.arguments
+    assert "Returned" in latest.result
+
+def test_audit_log_redacts_approval_token():
+    """The raw approval_token value must NEVER appear in audit_log.arguments."""
+    req = requisitions.create_purchase_requisition(
+        material_id="MAT-TEST-1",
+        quantity=100,
+        requested_by="Test User",
+    )
+
+    db = TestingSessionLocal()
+    db_req = db.query(PurchaseRequisition).filter(
+        PurchaseRequisition.requisition_id == req.requisition_id
+    ).first()
+    real_token = db_req.approval_token
+    db.close()
+
+    # Approve via the server wrapper (which triggers audit logging)
+    server.approve_pending_requisition(
+        requisition_id=req.requisition_id,
+        approved_by="Test Manager",
+        approval_token=real_token,
+    )
+
+    db = TestingSessionLocal()
+    entries = db.query(AuditLog).filter(
+        AuditLog.tool_name == "approve_pending_requisition"
+    ).all()
+    db.close()
+
+    assert len(entries) >= 1
+    for entry in entries:
+        # The raw token must not appear anywhere in the stored arguments
+        assert real_token not in entry.arguments
+        # The redaction placeholder must be present
+        assert "***REDACTED***" in entry.arguments
+
+def test_audit_log_records_failed_approval():
+    """A failed approval attempt (wrong token) must still be logged."""
+    req = requisitions.create_purchase_requisition(
+        material_id="MAT-TEST-1",
+        quantity=100,
+        requested_by="Test User",
+    )
+
+    with pytest.raises(ValueError):
+        server.approve_pending_requisition(
+            requisition_id=req.requisition_id,
+            approved_by="Test Manager",
+            approval_token="totally_wrong_token",
+        )
+
+    db = TestingSessionLocal()
+    entries = db.query(AuditLog).filter(
+        AuditLog.tool_name == "approve_pending_requisition"
+    ).all()
+    db.close()
+
+    assert len(entries) >= 1
+    failed_entry = entries[-1]
+    assert "FAILED" in failed_entry.result
+    # The wrong token value must also be redacted (it's still in _SENSITIVE_ARG_NAMES)
+    assert "totally_wrong_token" not in failed_entry.arguments
+    assert "***REDACTED***" in failed_entry.arguments
+
+def test_redact_arguments_helper():
+    """Unit test for the _redact_arguments function directly."""
+    raw = {"requisition_id": "PR-123", "approved_by": "Alice", "approval_token": "secret_abc"}
+    redacted = server._redact_arguments(raw)
+
+    assert redacted["requisition_id"] == "PR-123"
+    assert redacted["approved_by"] == "Alice"
+    assert redacted["approval_token"] == "***REDACTED***"
+    # Original dict must be untouched
+    assert raw["approval_token"] == "secret_abc"
+

@@ -29,3 +29,12 @@ class PurchaseRequisition(Base):
     approval_token = Column(String(100), nullable=True)
     created_at = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
     approved_at = Column(DateTime, nullable=True)
+
+class AuditLog(Base):
+    __tablename__ = 'audit_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tool_name = Column(String(100), nullable=False)
+    arguments = Column(String(2000), nullable=False)
+    result = Column(String(2000), nullable=False)
+    timestamp = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+

@@ -9,20 +9,26 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+    # NOTE: No Postgres service is needed here. All tests run against an
+    # in-memory SQLite database via monkeypatched SessionLocal — see
+    # tests/test_tools.py for the fixture. The real Postgres DB is only
+    # used at runtime via docker-compose.
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
-        
+
     - name: Install uv
       run: pip install uv
-      
+
     - name: Install dependencies
       run: uv pip install --system -e .
-      
+
+    # Tests use an in-memory SQLite DB (no real Postgres connection).
+    # testpaths in pyproject.toml restricts collection to tests/.
     - name: Run tests
-      run: uv run pytest
+      run: uv run pytest -v
