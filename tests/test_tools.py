@@ -66,13 +66,50 @@ def test_requisition_lifecycle():
     assert req.material_id == "MAT-TEST-1"
     assert req.approved_at is None
     
+    # fetch token from db
+    db = TestingSessionLocal()
+    db_req = db.query(PurchaseRequisition).filter(PurchaseRequisition.requisition_id == req.requisition_id).first()
+    token = db_req.approval_token
+    db.close()
+    
+    assert token is not None
+    
     # 2. Approve requisition
     approved_req = requisitions.approve_requisition(
         requisition_id=req.requisition_id,
-        approved_by="Test Manager"
+        approved_by="Test Manager",
+        approval_token=token
     )
     assert approved_req.status == "approved"
     assert approved_req.approved_at is not None
+
+def test_approve_with_wrong_token():
+    req = requisitions.create_purchase_requisition(
+        material_id="MAT-TEST-1", 
+        quantity=100, 
+        requested_by="Test User"
+    )
+    
+    with pytest.raises(ValueError, match="Invalid or missing approval token"):
+        requisitions.approve_requisition(
+            requisition_id=req.requisition_id,
+            approved_by="Test Manager",
+            approval_token="wrong_token_123"
+        )
+
+def test_approve_with_missing_token():
+    req = requisitions.create_purchase_requisition(
+        material_id="MAT-TEST-1", 
+        quantity=100, 
+        requested_by="Test User"
+    )
+    
+    with pytest.raises(ValueError, match="Invalid or missing approval token"):
+        requisitions.approve_requisition(
+            requisition_id=req.requisition_id,
+            approved_by="Test Manager",
+            approval_token=""
+        )
 
 def test_approve_already_approved_requisition():
     req = requisitions.create_purchase_requisition(
@@ -80,13 +117,33 @@ def test_approve_already_approved_requisition():
         quantity=100, 
         requested_by="Test User"
     )
+    
+    db = TestingSessionLocal()
+    db_req = db.query(PurchaseRequisition).filter(PurchaseRequisition.requisition_id == req.requisition_id).first()
+    token = db_req.approval_token
+    db.close()
+    
     requisitions.approve_requisition(
         requisition_id=req.requisition_id,
-        approved_by="Test Manager"
+        approved_by="Test Manager",
+        approval_token=token
     )
     
     with pytest.raises(ValueError, match="is already approved"):
         requisitions.approve_requisition(
             requisition_id=req.requisition_id,
-            approved_by="Another Manager"
+            approved_by="Another Manager",
+            approval_token=token
         )
+
+def test_create_requisition_invalid_material():
+    with pytest.raises(ValueError, match="Material MAT-INVALID not found"):
+        requisitions.create_purchase_requisition("MAT-INVALID", 100, "Test User")
+
+def test_create_requisition_invalid_quantity():
+    with pytest.raises(ValueError, match="Quantity must be positive"):
+        requisitions.create_purchase_requisition("MAT-TEST-1", -10, "Test User")
+
+def test_approve_nonexistent_requisition():
+    with pytest.raises(ValueError, match="Requisition PR-NONEXISTENT not found"):
+        requisitions.approve_requisition("PR-NONEXISTENT", "Test Manager", "token")
