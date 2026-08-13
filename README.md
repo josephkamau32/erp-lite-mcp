@@ -17,8 +17,8 @@ This server demonstrates a robust "human-in-the-loop" pattern:
 
 ```mermaid
 graph TD
-    Client[Claude Desktop / Custom Client] -->|MCP (stdio or Streamable HTTP)| FastMCP[FastMCP Server]
-    FastMCP -->|SQLAlchemy| DB[(PostgreSQL Database)]
+    Client[Claude Desktop / Custom Client] -- "MCP (stdio or Streamable HTTP)" --> FastMCP[FastMCP Server]
+    FastMCP -- "SQLAlchemy" --> DB[(PostgreSQL Database)]
     DB --> Seed[Seed Data]
 ```
 
