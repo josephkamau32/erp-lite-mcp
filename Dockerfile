@@ -19,8 +19,8 @@ COPY . .
 # Ensure standard output is unbuffered
 ENV PYTHONUNBUFFERED=1
 
-# Expose port for HTTP SSE
+# Expose port for HTTP transport
 EXPOSE 8000
 
-# Command to run the SSE server by default
-CMD ["python", "-m", "src.server", "sse"]
+# Command to run the streamable-http server by default
+CMD ["python", "-m", "src.server", "streamable-http"]

@@ -26,5 +26,6 @@ class PurchaseRequisition(Base):
     quantity = Column(Integer, nullable=False)
     requested_by = Column(String(100), nullable=False)
     status = Column(String(50), nullable=False)
+    approval_token = Column(String(100), nullable=True)
     created_at = Column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
     approved_at = Column(DateTime, nullable=True)

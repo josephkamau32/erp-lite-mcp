@@ -20,6 +20,7 @@ CREATE TABLE purchase_requisitions (
     quantity INT NOT NULL,
     requested_by VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,
+    approval_token VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     approved_at TIMESTAMP NULL,
     FOREIGN KEY (material_id) REFERENCES inventory_items(material_id)

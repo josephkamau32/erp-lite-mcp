@@ -9,42 +9,56 @@ As enterprise AI adoption accelerates, providing LLMs with direct read/write acc
 This server demonstrates a robust "human-in-the-loop" pattern:
 - The AI agent can query **open sales orders**, check **inventory levels**, and identify **low-stock items** using its read-only tools.
 - When an agent decides to replenish stock, it can only propose a **purchase requisition** in a `pending_approval` state.
-- **The agent cannot approve its own requisition.** A human must intervene to approve it.
+- **The agent cannot approve its own requisition.** When it creates the requisition, a secure `approval_token` is generated and saved to the database, but is *not* returned to the agent.
+- A human administrator can view pending requisitions and their tokens via a dedicated, authenticated REST endpoint (`GET /admin/pending-requisitions`). 
+- The human must intervene to approve the requisition by providing the correct token to the agent (or an approval mechanism) to satisfy the gate.
 
 ## Architecture
 
 ```mermaid
 graph TD
-    Client[Claude Desktop / Custom Client] -->|MCP (stdio or SSE HTTP)| FastMCP[FastMCP Server]
+    Client[Claude Desktop / Custom Client] -->|MCP (stdio or Streamable HTTP)| FastMCP[FastMCP Server]
     FastMCP -->|SQLAlchemy| DB[(PostgreSQL Database)]
     DB --> Seed[Seed Data]
 ```
 
 ## Quick Start (Docker)
 
-To get started quickly, run the entire stack with Docker Compose:
+To get started quickly, run the entire stack with Docker Compose.
+First, create your `.env` file to set a secure Admin API key:
+
+```bash
+cp .env.example .env
+# Edit .env and set your ADMIN_API_KEY to a secure value
+```
+
+Then start the containers:
 
 ```bash
 docker compose up
 ```
 
 This spins up:
-- A PostgreSQL database (pre-seeded with realistic enterprise data for sales orders, inventory, and requisitions).
-- The MCP server exposing SSE transport at `http://localhost:8000/sse`.
+- A PostgreSQL database (pre-seeded with realistic enterprise data for sales orders, inventory, and requisitions), with health checks configured.
+- The MCP server exposing the Streamable HTTP transport on port 8000.
 
 ## Tools Exposed
 
 - `get_open_orders(status="open", limit=20)`: Retrieves a list of sales orders by status.
 - `check_inventory(material_id)`: Checks the inventory level and computes if it's below the reorder point.
 - `get_low_stock_items()`: Intelligent query that identifies all inventory items below their reorder threshold.
-- `create_requisition(material_id, quantity, requested_by)`: **WRITE TOOL**. Creates a new purchase requisition in a `pending_approval` state.
-- `approve_pending_requisition(requisition_id, approved_by)`: **WRITE TOOL**. Approves a pending requisition. Must be explicitly triggered by human confirmation.
+- `create_requisition(material_id, quantity, requested_by)`: **WRITE TOOL**. Creates a new purchase requisition in a `pending_approval` state and silently records an `approval_token`.
+- `approve_pending_requisition(requisition_id, approved_by, approval_token)`: **WRITE TOOL**. Approves a pending requisition. Must be explicitly triggered by human confirmation using the token retrieved from the admin endpoint.
+
+## Demo
+
+<!-- TODO: Insert screen recording here demonstrating the agent workflow and human approval gate -->
 
 ## Testing Locally
 
 ### Using the Custom Python Client
 
-To prove that this server supports remote transport via HTTP (Server-Sent Events), you can use the built-in client script:
+To prove that this server supports remote transport via HTTP, you can use the built-in client script:
 
 ```bash
 python client.py
@@ -85,6 +99,7 @@ uv run pytest
 
 ## Future Enhancements
 
-- **Authentication & RBAC:** Implement Role-Based Access Control to ensure the `approved_by` identity has the actual rights to approve the specific value/material in the requisition.
+- **Token Security:** Currently, the `approval_token` is stored as plaintext in the database so the admin endpoint can serve it. In a fully-fledged system with email or Slack integration, the token should be sent directly to the approver's inbox and stored as a cryptographic hash in the database, preventing it from ever being exposed via an API route.
+- **Authentication & RBAC:** Implement Role-Based Access Control to ensure the `approved_by` identity has the actual rights to approve the specific value/material in the requisition. The admin route currently uses a simple shared-secret `ADMIN_API_KEY`, which is sufficient for a demo but needs proper IAM in production.
 - **Audit Logging:** Maintain a strict append-only audit trail of who/what queried and executed which tool, crucial for compliance (e.g. SOX).
 - **Policy Search Resource:** A RAG-like capability to expose procurement policy documents to the agent as MCP resources.

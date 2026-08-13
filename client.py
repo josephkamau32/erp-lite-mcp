@@ -1,15 +1,15 @@
 import asyncio
 import argparse
 from mcp import ClientSession
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamable_http_client
 
 async def run(port: int):
-    # Connect to the FastMCP SSE server
-    url = f"http://localhost:{port}/sse"
+    # Connect to the FastMCP server
+    url = f"http://localhost:{port}/mcp"
     
     print(f"Connecting to {url}...")
     
-    async with sse_client(url) as streams:
+    async with streamable_http_client(url) as streams:
         async with ClientSession(streams[0], streams[1]) as session:
             print("Connected!")
             
@@ -47,7 +47,7 @@ async def run(port: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test MCP Client")
-    parser.add_argument("--port", type=int, default=8000, help="Port of the SSE server")
+    parser.add_argument("--port", type=int, default=8000, help="Port of the server")
     args = parser.parse_args()
     
     asyncio.run(run(args.port))

@@ -2,23 +2,30 @@ services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: erp_user
-      POSTGRES_PASSWORD: erp_password
-      POSTGRES_DB: erp_lite
+      POSTGRES_USER: ${POSTGRES_USER:-erp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-erp_password}
+      POSTGRES_DB: ${POSTGRES_DB:-erp_lite}
     ports:
       - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./seed_data.sql:/docker-entrypoint-initdb.d/seed_data.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp_user} -d ${POSTGRES_DB:-erp_lite}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   mcp_server:
     build: .
     environment:
-      DATABASE_URL: postgresql://erp_user:erp_password@db:5432/erp_lite
+      DATABASE_URL: ${DATABASE_URL:-postgresql://erp_user:erp_password@db:5432/erp_lite}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:
