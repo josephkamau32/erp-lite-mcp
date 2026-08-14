@@ -1,6 +1,6 @@
 # ERP-lite MCP Server
 
-An enterprise-ready Model Context Protocol (MCP) server that exposes ERP functionalities to AI agents. Built as a portfolio project to demonstrate AI/ML maturity, this project features a realistic data schema and a critical human-in-the-loop workflow for write actions.
+An enterprise-ready Model Context Protocol (MCP) server that exposes ERP functionalities to AI agents. Built as a portfolio project to demonstrate AI/ML engineering maturity, this project features a realistic data schema, a genuinely enforced human-in-the-loop approval workflow for write actions, and a full compliance-style audit trail.
 
 ## Overview
 
@@ -9,9 +9,10 @@ As enterprise AI adoption accelerates, providing LLMs with direct read/write acc
 This server demonstrates a robust "human-in-the-loop" pattern:
 - The AI agent can query **open sales orders**, check **inventory levels**, and identify **low-stock items** using its read-only tools.
 - When an agent decides to replenish stock, it can only propose a **purchase requisition** in a `pending_approval` state.
-- **The agent cannot approve its own requisition.** When it creates the requisition, a secure `approval_token` is generated and saved to the database, but is *not* returned to the agent.
-- A human administrator can view pending requisitions and their tokens via a dedicated, authenticated REST endpoint (`GET /admin/pending-requisitions`). 
-- The human must intervene to approve the requisition by providing the correct token to the agent (or an approval mechanism) to satisfy the gate.
+- **The agent cannot approve its own requisition.** When it creates the requisition, a secure `approval_token` is generated and saved to the database, but is *never* returned to the agent.
+- A human administrator can view pending requisitions and their tokens via a dedicated, authenticated REST endpoint (`GET /admin/pending-requisitions`) that sits entirely outside the MCP tool surface — no agent can reach it.
+- The human retrieves the token through that endpoint and supplies it back to approve the requisition, closing the loop with a real access-control check (constant-time token comparison), not just a naming convention.
+- Every tool call — successful or failed — is written to an **append-only audit log**, with sensitive values like `approval_token` redacted before persistence.
 
 ## Architecture
 
@@ -20,16 +21,22 @@ graph TD
     Client[Claude Desktop / Custom Client] -- "MCP (stdio or Streamable HTTP)" --> FastMCP[FastMCP Server]
     FastMCP -- "SQLAlchemy" --> DB[(PostgreSQL Database)]
     DB --> Seed[Seed Data]
+    Admin[Human Admin] -- "X-Admin-Key (REST, outside MCP surface)" --> FastMCP
 ```
+
+## Demo
+
+https://github.com/user-attachments/assets/8584d882-ecb2-43f2-bd31-7a095bedd25c
+
+*Checking low-stock inventory → agent proposing a purchase requisition → retrieving the approval token via the admin endpoint → approving the requisition → resulting audit log entry.*
 
 ## Quick Start (Docker)
 
-To get started quickly, run the entire stack with Docker Compose.
-First, create your `.env` file to set a secure Admin API key:
+First, create your `.env` file and set a secure Admin API key:
 
 ```bash
 cp .env.example .env
-# Edit .env and set your ADMIN_API_KEY to a secure value
+# Edit .env and set ADMIN_API_KEY to a secure, random value
 ```
 
 Then start the containers:
@@ -39,84 +46,85 @@ docker compose up
 ```
 
 This spins up:
-- A PostgreSQL database (pre-seeded with realistic enterprise data for sales orders, inventory, and requisitions), with health checks configured.
-- The MCP server exposing the Streamable HTTP transport on port 8000.
+- A PostgreSQL database, health-checked, pre-seeded with realistic enterprise data for sales orders, inventory, requisitions, and an empty audit log table.
+- The MCP server, exposing the Streamable HTTP transport on port 8000.
 
-> **⚠️ Upgrading from a previous version?** The `seed_data.sql` script only runs via `docker-entrypoint-initdb.d` on a **fresh, empty** Postgres volume. If you already have a `pgdata` volume from a prior run, new tables (like `audit_log`) won't be created automatically. To pick up schema changes, wipe the volume and rebuild:
+> **⚠️ Upgrading from a previous version?** `seed_data.sql` only runs via `docker-entrypoint-initdb.d` on a **fresh, empty** Postgres volume. If you already have a `pgdata` volume from an earlier run, new tables (like `audit_log`) won't be created automatically. To pick up schema changes:
 > ```bash
 > docker compose down -v
 > docker compose up --build
 > ```
 
-## Tools Exposed
+## Tools Exposed (MCP)
 
-- `get_open_orders(status="open", limit=20)`: Retrieves a list of sales orders by status.
-- `check_inventory(material_id)`: Checks the inventory level and computes if it's below the reorder point.
-- `get_low_stock_items()`: Intelligent query that identifies all inventory items below their reorder threshold.
-- `create_requisition(material_id, quantity, requested_by)`: **WRITE TOOL**. Creates a new purchase requisition in a `pending_approval` state and silently records an `approval_token`.
-- `approve_pending_requisition(requisition_id, approved_by, approval_token)`: **WRITE TOOL**. Approves a pending requisition. Must be explicitly triggered by human confirmation using the token retrieved from the admin endpoint.
+| Tool | Type | Description |
+|---|---|---|
+| `get_open_orders(status="open", limit=20)` | Read | Retrieves sales orders by status. |
+| `check_inventory(material_id)` | Read | Checks inventory level and computes whether it's below the reorder point. |
+| `get_low_stock_items()` | Read | Identifies all inventory items below their reorder threshold. |
+| `create_requisition(material_id, quantity, requested_by)` | **Write** | Creates a purchase requisition in `pending_approval` state; silently generates and stores an `approval_token`. |
+| `approve_pending_requisition(requisition_id, approved_by, approval_token)` | **Write** | Approves a pending requisition — only succeeds with the correct token, sourced from the human-only admin endpoint below. |
 
-All tool calls (both successful and failed) are automatically recorded in the **append-only audit log** for SOX-style compliance. Sensitive arguments like `approval_token` are redacted before persistence.
+All tool calls, successful or failed, are recorded in the append-only audit log. Sensitive arguments (e.g. `approval_token`) are redacted before being persisted.
 
-## Admin Endpoints
+## Admin Endpoints (human-only, outside the MCP tool surface)
 
-- `GET /admin/pending-requisitions`: Lists all pending requisitions with their approval tokens.
-- `GET /admin/audit-log?limit=50`: Returns the most recent audit log entries (newest first). Supports `?limit=N` (default 50, max 500).
+- `GET /admin/pending-requisitions` — lists pending requisitions with their approval tokens.
+- `GET /admin/audit-log?limit=50` — returns the most recent audit log entries, newest first (`limit` default 50, max 500).
 
-Both endpoints require the `X-Admin-Key` header matching the `ADMIN_API_KEY` environment variable.
-
-## Demo
-
-<!-- TODO: Insert screen recording here demonstrating the agent workflow and human approval gate -->
+Both require an `X-Admin-Key` header matching the `ADMIN_API_KEY` environment variable, and fail closed (HTTP 500) if that variable isn't set at all — there is no default key baked into the app.
 
 ## Testing Locally
 
-### Using the Custom Python Client
-
-To prove that this server supports remote transport via HTTP, you can use the built-in client script:
+### Custom Python client (proves remote Streamable HTTP transport works independent of any chat client)
 
 ```bash
 python client.py
 ```
 
-### Using Claude Desktop (Stdio transport)
-
-To test with Claude Desktop, configure your `claude_desktop_config.json` to use the `uv run` command:
+### Claude Desktop (stdio transport)
 
 ```json
 {
   "mcpServers": {
     "erp-lite": {
-      "command": "C:\\Absolute\\Path\\To\\erp-lite-mcp\\.venv\\Scripts\\python.exe",
-      "args": [
-        "-m",
-        "src.server"
-      ],
+      "command": "/absolute/path/to/erp-lite-mcp/.venv/Scripts/python.exe",
+      "args": ["-m", "src.server"],
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PYTHONIOENCODING": "utf-8",
-        "PYTHONPATH": "C:\\Absolute\\Path\\To\\erp-lite-mcp"
+        "PYTHONPATH": "/absolute/path/to/erp-lite-mcp"
       }
     }
   }
 }
 ```
 
-> **Note for Windows Users:** Claude Desktop runs in a sandboxed environment on Windows. Using `uv run` directly inside the config often fails to resolve relative module paths correctly. It is highly recommended to provide the absolute path to the `.venv\Scripts\python.exe` and explicitly pass your project directory as the `PYTHONPATH` environment variable as shown above.
+> **Windows note:** Claude Desktop's sandboxing frequently fails to resolve `uv run` relative module paths correctly. Using the absolute path to `.venv\Scripts\python.exe`, with `PYTHONPATH` set explicitly, is the reliable configuration.
 
 ## Running Unit Tests
-
-To run the `pytest` suite testing the tool logic, requisition lifecycle, and audit logging:
 
 ```bash
 uv run pytest
 ```
 
-> **Note:** All tests run against an **in-memory SQLite database** — no Postgres container or Docker is needed. The `SessionLocal` is monkeypatched in the test fixture. CI (GitHub Actions) uses the same approach, so no database service is configured in the workflow.
+Covers tool logic, the full requisition lifecycle (create → pending → wrong-token rejection → correct-token approval), and audit logging (including token redaction and failed-attempt capture).
+
+> All tests run against an **in-memory SQLite database** (`SessionLocal` monkeypatched in fixtures) — no Postgres or Docker required. CI (GitHub Actions) uses the same approach, so no database service is configured in the workflow.
+
+## CI
+
+Every push and pull request to `main` runs the full `pytest` suite via GitHub Actions.
+
+## Design Decisions Worth Knowing
+
+- **The approval gate is an access-control mechanism, not a naming convention.** `create_requisition` never returns the token to the caller; `approve_pending_requisition` performs a constant-time comparison (`secrets.compare_digest`) against the stored value, so there's no timing side-channel and no path by which the same agent session can complete both halves of the workflow on its own.
+- **The admin surface is intentionally separate from the MCP tool surface.** Tokens and audit history are retrievable only via authenticated REST routes an agent has no tool access to — the trust boundary is structural, not just a prompt-level instruction telling the agent not to self-approve.
+- **Audit logging is fire-and-forget but not silent.** A logging failure never blocks a real tool response, but is written to server stderr, so an audit pipeline failure is observable in ops rather than invisible.
 
 ## Future Enhancements
 
-- **Token Security:** Currently, the `approval_token` is stored as plaintext in the database so the admin endpoint can serve it. In a fully-fledged system with email or Slack integration, the token should be sent directly to the approver's inbox and stored as a cryptographic hash in the database, preventing it from ever being exposed via an API route.
-- **Authentication & RBAC:** Implement Role-Based Access Control to ensure the `approved_by` identity has the actual rights to approve the specific value/material in the requisition. The admin route currently uses a simple shared-secret `ADMIN_API_KEY`, which is sufficient for a demo but needs proper IAM in production.
-- ~~**Audit Logging:**~~ ✅ **Implemented.** Every tool call is recorded in an append-only `audit_log` table with tool name, redacted arguments, result (including failures), and timestamp. Accessible via `GET /admin/audit-log`.
-- **Policy Search Resource:** A RAG-like capability to expose procurement policy documents to the agent as MCP resources.
+- **Token security:** the `approval_token` is currently stored as plaintext so the admin endpoint can serve it directly. A production version would deliver it via a side channel (email/Slack) at creation time and store only a salted hash, never exposing plaintext through any API.
+- **Authentication & RBAC:** the admin routes currently use a single shared-secret `ADMIN_API_KEY`. Production use would need real identity-based auth and role checks (e.g. verifying `approved_by` actually holds approval rights for the requisition's value/material).
+- ~~**Audit logging**~~ ✅ **Implemented.** Every tool call is recorded in an append-only `audit_log` table with tool name, redacted arguments, result (including failures), and timestamp — accessible via `GET /admin/audit-log`.
+- **Policy search resource:** expose procurement policy documents to the agent as an MCP Resource with semantic search, so the agent can check policy context before proposing a requisition.

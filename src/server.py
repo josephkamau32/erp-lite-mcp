@@ -104,8 +104,8 @@ def get_low_stock_items() -> List[InventoryCheckResponse]:
 @mcp.tool()
 def create_requisition(material_id: str, quantity: int, requested_by: str) -> str:
     """
-    Create a new purchase requisition (pending approval).
-    The agent CANNOT approve its own requisition.
+    Create a new purchase requisition. It will be created with status 'pending_approval'.
+    A separate approval step is required using an approval_token that is not returned here.
     """
     args = {"material_id": material_id, "quantity": quantity, "requested_by": requested_by}
     try:
@@ -120,9 +120,9 @@ def create_requisition(material_id: str, quantity: int, requested_by: str) -> st
 @mcp.tool()
 def approve_pending_requisition(requisition_id: str, approved_by: str, approval_token: str) -> str:
     """
-    Approve a pending purchase requisition. 
-    This MUST be triggered by a human via approval mechanisms.
-    The required approval_token is only accessible to human administrators.
+    Approve a pending purchase requisition.
+    Requires a valid approval_token. When the user provides you with a
+    requisition_id and approval_token, call this tool to complete the approval.
     """
     args = {"requisition_id": requisition_id, "approved_by": approved_by, "approval_token": approval_token}
     try:
