@@ -53,8 +53,19 @@ def test_check_inventory_not_found():
     with pytest.raises(ValueError, match="Material MAT-UNKNOWN not found"):
         inventory.check_inventory_level("MAT-UNKNOWN")
 
+def test_check_inventory():
+    result = server.check_inventory("MAT-TEST-1")
+    assert result.material_id == "MAT-TEST-1"
+    assert result.quantity_on_hand == 50
+    assert result.below_reorder_point is True
+
 def test_list_low_stock_items():
     result = inventory.list_low_stock_items()
+    assert len(result) == 1
+    assert result[0].material_id == "MAT-TEST-1"
+
+def test_get_low_stock_items():
+    result = server.get_low_stock_items()
     assert len(result) == 1
     assert result[0].material_id == "MAT-TEST-1"
 
@@ -150,6 +161,16 @@ def test_create_requisition_invalid_quantity():
 def test_approve_nonexistent_requisition():
     with pytest.raises(ValueError, match="Requisition PR-NONEXISTENT not found"):
         requisitions.approve_requisition("PR-NONEXISTENT", "Test Manager", "token")
+
+def test_create_requisition():
+    result = server.create_requisition(
+        material_id="MAT-TEST-1",
+        quantity=25,
+        requested_by="Test User",
+    )
+    assert "Successfully created requisition" in result
+    assert "MAT-TEST-1" in result
+    assert "pending_approval" in result
 
 
 # ---------------------------------------------------------------------------

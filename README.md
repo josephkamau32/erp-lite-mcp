@@ -128,3 +128,7 @@ Every push and pull request to `main` runs the full `pytest` suite via GitHub Ac
 - **Authentication & RBAC:** the admin routes currently use a single shared-secret `ADMIN_API_KEY`. Production use would need real identity-based auth and role checks (e.g. verifying `approved_by` actually holds approval rights for the requisition's value/material).
 - ~~**Audit logging**~~ ✅ **Implemented.** Every tool call is recorded in an append-only `audit_log` table with tool name, redacted arguments, result (including failures), and timestamp — accessible via `GET /admin/audit-log`.
 - **Policy search resource:** expose procurement policy documents to the agent as an MCP Resource with semantic search, so the agent can check policy context before proposing a requisition.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

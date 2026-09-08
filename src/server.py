@@ -3,6 +3,7 @@ import sys
 import json
 from datetime import datetime
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from typing import List, Optional
 
 # Import tools
@@ -63,7 +64,14 @@ def _record_audit(tool_name: str, arguments: dict, result: str) -> None:
 # MCP Tools (with audit logging on both success and failure paths)
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def get_open_orders(status: str = "open", limit: int = 20) -> List[SalesOrderResponse]:
     """Retrieve a list of sales orders by status."""
     args = {"status": status, "limit": limit}
@@ -75,7 +83,14 @@ def get_open_orders(status: str = "open", limit: int = 20) -> List[SalesOrderRes
         _record_audit("get_open_orders", args, f"FAILED: {exc}")
         raise
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def check_inventory(material_id: str) -> InventoryCheckResponse:
     """Check the inventory level for a specific material ID."""
     args = {"material_id": material_id}
@@ -87,7 +102,14 @@ def check_inventory(material_id: str) -> InventoryCheckResponse:
         _record_audit("check_inventory", args, f"FAILED: {exc}")
         raise
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def get_low_stock_items() -> List[InventoryCheckResponse]:
     """List all inventory items where the quantity on hand is below the reorder point."""
     args = {}
@@ -101,7 +123,14 @@ def get_low_stock_items() -> List[InventoryCheckResponse]:
 
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
+)
 def create_requisition(material_id: str, quantity: int, requested_by: str) -> str:
     """
     Create a new purchase requisition. It will be created with status 'pending_approval'.
@@ -117,7 +146,14 @@ def create_requisition(material_id: str, quantity: int, requested_by: str) -> st
         _record_audit("create_requisition", args, f"FAILED: {exc}")
         raise
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
+)
 def approve_pending_requisition(requisition_id: str, approved_by: str, approval_token: str) -> str:
     """
     Approve a pending purchase requisition.
