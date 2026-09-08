@@ -1,5 +1,7 @@
 # ERP-lite MCP Server
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/josephkamau32-erp-lite-mcp-k0xj5k?v=89fd5966925626c8b1691a7fa1f997f1)](https://m8ven.ai/mcp/josephkamau32-erp-lite-mcp-k0xj5k)
+
 An enterprise-ready Model Context Protocol (MCP) server that exposes ERP functionalities to AI agents. Built as a portfolio project to demonstrate AI/ML engineering maturity, this project features a realistic data schema, a genuinely enforced human-in-the-loop approval workflow for write actions, and a full compliance-style audit trail.
 
 ## Overview
