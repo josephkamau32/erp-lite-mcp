@@ -14,11 +14,69 @@ from .schemas import SalesOrderResponse, InventoryCheckResponse, PurchaseRequisi
 from .db import SessionLocal
 from .models import PurchaseRequisition, AuditLog
 
+import secrets
+from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+# ---------------------------------------------------------------------------
+# Transport-level authentication for Streamable HTTP (/mcp)
+# ---------------------------------------------------------------------------
+
+class MCPAuthMiddleware:
+    """Pure ASGI middleware that enforces MCP_API_KEY on the /mcp endpoint.
+
+    Fails closed (HTTP 500) if MCP_API_KEY is unset in the environment.
+    Rejects missing or invalid tokens with HTTP 401.
+    Accepts tokens via 'Authorization: Bearer <token>' or 'X-MCP-API-Key: <token>'.
+    Does not touch /admin/* routes or any non-/mcp paths.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path == "/mcp" or path.startswith("/mcp/"):
+                expected_key = os.environ.get("MCP_API_KEY")
+                if not expected_key:
+                    res = JSONResponse(
+                        {"error": "Server configuration error: MCP_API_KEY not set"},
+                        status_code=500,
+                    )
+                    await res(scope, receive, send)
+                    return
+
+                headers = Headers(scope=scope)
+                auth_header = headers.get("authorization", "")
+                token = None
+                if auth_header.lower().startswith("bearer "):
+                    token = auth_header[7:].strip()
+                elif "x-mcp-api-key" in headers:
+                    token = headers.get("x-mcp-api-key")
+
+                if not token or not secrets.compare_digest(token, expected_key):
+                    res = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                    await res(scope, receive, send)
+                    return
+
+        await self.app(scope, receive, send)
+
+
+class AuthFastMCP(FastMCP):
+    """FastMCP subclass that wraps the Streamable HTTP Starlette app with MCPAuthMiddleware."""
+
+    def streamable_http_app(self):
+        app = super().streamable_http_app()
+        return MCPAuthMiddleware(app)
+
+
+# Default to loopback (127.0.0.1) for local safety; override via MCP_HOST (e.g. in Docker to 0.0.0.0)
+_MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
+
 # Create FastMCP server
-mcp = FastMCP("erp-lite", host="0.0.0.0")
+mcp = AuthFastMCP("erp-lite", host=_MCP_HOST)
 
 # ---------------------------------------------------------------------------
 # Audit logging helpers

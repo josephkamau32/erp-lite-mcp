@@ -21,6 +21,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://erp_user:erp_password@db:5432/erp_lite}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
+      MCP_API_KEY: ${MCP_API_KEY}
+      MCP_HOST: "0.0.0.0"
     ports:
       - "8000:8000"
     depends_on:

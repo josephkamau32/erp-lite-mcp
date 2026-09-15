@@ -20,7 +20,7 @@ This server demonstrates a robust "human-in-the-loop" pattern:
 
 ```mermaid
 graph TD
-    Client[Claude Desktop / Custom Client] -- "MCP (stdio or Streamable HTTP)" --> FastMCP[FastMCP Server]
+    Client[Claude Desktop / Custom Client] -- "MCP (stdio or Streamable HTTP with Bearer Token)" --> FastMCP[FastMCP Server]
     FastMCP -- "SQLAlchemy" --> DB[(PostgreSQL Database)]
     DB --> Seed[Seed Data]
     Admin[Human Admin] -- "X-Admin-Key (REST, outside MCP surface)" --> FastMCP
@@ -34,11 +34,11 @@ https://github.com/user-attachments/assets/8584d882-ecb2-43f2-bd31-7a095bedd25c
 
 ## Quick Start (Docker)
 
-First, create your `.env` file and set a secure Admin API key:
+First, create your `.env` file and set secure keys for both the MCP transport and the Admin API:
 
 ```bash
 cp .env.example .env
-# Edit .env and set ADMIN_API_KEY to a secure, random value
+# Edit .env and set MCP_API_KEY and ADMIN_API_KEY to secure, independent values
 ```
 
 Then start the containers:
@@ -49,13 +49,19 @@ docker compose up
 
 This spins up:
 - A PostgreSQL database, health-checked, pre-seeded with realistic enterprise data for sales orders, inventory, requisitions, and an empty audit log table.
-- The MCP server, exposing the Streamable HTTP transport on port 8000.
+- The MCP server, exposing the Streamable HTTP transport on port 8000, protected with `MCP_API_KEY`.
 
 > **⚠️ Upgrading from a previous version?** `seed_data.sql` only runs via `docker-entrypoint-initdb.d` on a **fresh, empty** Postgres volume. If you already have a `pgdata` volume from an earlier run, new tables (like `audit_log`) won't be created automatically. To pick up schema changes:
 > ```bash
 > docker compose down -v
 > docker compose up --build
 > ```
+
+### Network Binding & Docker vs. Host Execution
+
+- **Local Host Execution (Safe Default):** By default, `server.py` binds to loopback (`127.0.0.1`), ensuring the server is not reachable from other machines on your local network unless explicitly configured.
+- **Docker Execution (`MCP_HOST=0.0.0.0`):** `docker-compose.yml` explicitly sets `MCP_HOST=0.0.0.0` in the container environment. This is **required** inside Docker because binding to `127.0.0.1` inside a container isolates it entirely within the container's private network namespace, making it unreachable via Docker's port mapping (`8000:8000`).
+- **⚠️ Warning:** Never expose `MCP_HOST=0.0.0.0` directly to public networks or untrusted LANs without verifying that transport authentication (`MCP_API_KEY`) or an authenticating reverse proxy is active.
 
 ## Tools Exposed (MCP)
 
@@ -69,22 +75,43 @@ This spins up:
 
 All tool calls, successful or failed, are recorded in the append-only audit log. Sensitive arguments (e.g. `approval_token`) are redacted before being persisted.
 
-## Admin Endpoints (human-only, outside the MCP tool surface)
+## Authentication & Access Boundaries
 
-- `GET /admin/pending-requisitions` — lists pending requisitions with their approval tokens.
-- `GET /admin/audit-log?limit=50` — returns the most recent audit log entries, newest first (`limit` default 50, max 500).
+The server enforces strict, independent access controls across surfaces:
 
-Both require an `X-Admin-Key` header matching the `ADMIN_API_KEY` environment variable, and fail closed (HTTP 500) if that variable isn't set at all — there is no default key baked into the app.
+1. **MCP Streamable HTTP Transport (`/mcp`):**
+   - Protected by `MCP_API_KEY` via pure ASGI middleware.
+   - Accepts either `Authorization: Bearer <MCP_API_KEY>` or `X-MCP-API-Key: <MCP_API_KEY>`.
+   - Rejects unauthenticated or invalid requests with HTTP 401.
+   - **Fail-closed:** If `MCP_API_KEY` is unset in the server environment, all requests to `/mcp` are rejected with HTTP 500.
+
+2. **Admin REST Endpoints (outside MCP tool surface):**
+   - `GET /admin/pending-requisitions` — lists pending requisitions with approval tokens.
+   - `GET /admin/audit-log?limit=50` — returns the most recent audit log entries, newest first (`limit` default 50, max 500).
+   - Protected by `ADMIN_API_KEY` via `X-Admin-Key` header.
+   - **Fail-closed:** HTTP 500 if `ADMIN_API_KEY` is not set.
+
+3. **Claude Desktop / Local Stdio Transport:**
+   - When run in default stdio mode (`python -m src.server`), communication occurs over a local operating system pipe. No `MCP_API_KEY` is required because stdio is not exposed to the network.
 
 ## Testing Locally
 
-### Custom Python client (proves remote Streamable HTTP transport works independent of any chat client)
+### Custom Python client (Streamable HTTP with Bearer Auth)
+
+Set your `MCP_API_KEY` environment variable or pass `--api-key`:
 
 ```bash
+# Using environment variable
+export MCP_API_KEY="your_secret_mcp_api_key_here"
 python client.py
+
+# Or via CLI argument
+python client.py --api-key "your_secret_mcp_api_key_here"
 ```
 
 ### Claude Desktop (stdio transport)
+
+Because `stdio` is a direct local process pipe, it does not require network credentials:
 
 ```json
 {
@@ -127,9 +154,14 @@ Every push and pull request to `main` runs the full `pytest` suite via GitHub Ac
 ## Future Enhancements
 
 - **Token security:** the `approval_token` is currently stored as plaintext so the admin endpoint can serve it directly. A production version would deliver it via a side channel (email/Slack) at creation time and store only a salted hash, never exposing plaintext through any API.
-- **Authentication & RBAC:** the admin routes currently use a single shared-secret `ADMIN_API_KEY`. Production use would need real identity-based auth and role checks (e.g. verifying `approved_by` actually holds approval rights for the requisition's value/material).
+- **Authentication & RBAC:** the admin routes currently use a shared-secret `ADMIN_API_KEY`, while the MCP transport uses `MCP_API_KEY`. Production use would expand this to identity-based OAuth/OIDC and granular role checks.
+- ~~**Transport-level authentication**~~ ✅ **Implemented.** Streamable HTTP transport at `/mcp` requires `MCP_API_KEY` (fail-closed, constant-time compare). Default bind changed to `127.0.0.1`. (Reported by Shiqiang Chen, see [SECURITY.md](SECURITY.md)).
 - ~~**Audit logging**~~ ✅ **Implemented.** Every tool call is recorded in an append-only `audit_log` table with tool name, redacted arguments, result (including failures), and timestamp — accessible via `GET /admin/audit-log`.
 - **Policy search resource:** expose procurement policy documents to the agent as an MCP Resource with semantic search, so the agent can check policy context before proposing a requisition.
+
+## Security
+
+Please see [SECURITY.md](SECURITY.md) for vulnerability reporting guidelines and details on past security advisories (including GH-001 responsible disclosure credit to Shiqiang Chen).
 
 ## License
 
